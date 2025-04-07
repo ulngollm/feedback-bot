@@ -1,13 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
-	tele "gopkg.in/telebot.v3"
+	tele "gopkg.in/telebot.v4"
 )
 
 var admin tele.ChatID
@@ -56,6 +57,7 @@ func main() {
 
 	bot.Handle("/start", onStart)
 	bot.Handle(tele.OnText, onMessage)
+	bot.Handle(tele.OnReply, onReply)
 
 	bot.Start()
 
@@ -69,7 +71,7 @@ func onMessage(c tele.Context) error {
 	if err := c.Bot().React(
 		c.Chat(),
 		c.Message(),
-		tele.ReactionOptions{
+		tele.Reactions{
 			Reactions: []tele.Reaction{{Emoji: "👌", Type: "emoji"}}},
 	); err != nil {
 		log.Printf("tele.Reaction: %s", err)
@@ -80,4 +82,24 @@ func onMessage(c tele.Context) error {
 	}
 
 	return c.ForwardTo(admin)
+}
+
+func onReply(c tele.Context) error {
+	if c.Message().ReplyTo == nil {
+		return nil
+	}
+	if c.Message().ReplyTo.OriginalChat == c.Chat() {
+		return nil
+	}
+	r := c.Message().ReplyTo
+	msg := c.Message().Text
+
+	// todo use ReplyTo (чтобы на той стороне было понятно, на какое сообщение ответили)
+	// todo need originalMessageID . Если все сообщения будут писаться в бд - проблема решена
+	// лог должен быть такой, чтобы по id of forwarded message в админ чате можно было получить id оригинального сообщения
+	_, err := c.Bot().Send(r.OriginalSender, msg)
+	if err != nil {
+		return fmt.Errorf("onReply.Send: %s", err)
+	}
+	return c.Send("ответ отправлен пользователю")
 }
