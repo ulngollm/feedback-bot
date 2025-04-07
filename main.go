@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -37,7 +36,6 @@ func main() {
 		log.Fatalf("strconv.ParseInt: %s", err)
 		return
 	}
-	admin = tele.ChatID(adminID)
 
 	pref := tele.Settings{
 		Token: t,
@@ -54,6 +52,7 @@ func main() {
 		log.Fatalf("tele.NewBot: %s", err)
 		return
 	}
+	admin = tele.ChatID(adminID)
 
 	bot.Handle("/start", onStart)
 	bot.Handle(tele.OnText, onMessage)
@@ -67,14 +66,18 @@ func onStart(c tele.Context) error {
 }
 
 func onMessage(c tele.Context) error {
-	_, err := c.Bot().Forward(admin, c.Message())
-	if err != nil {
-		return fmt.Errorf("forward: %s", err)
-	}
-	return c.Bot().React(
+	if err := c.Bot().React(
 		c.Chat(),
 		c.Message(),
 		tele.ReactionOptions{
 			Reactions: []tele.Reaction{{Emoji: "👌", Type: "emoji"}}},
-	)
+	); err != nil {
+		log.Printf("tele.Reaction: %s", err)
+	}
+
+	if c.Sender().Recipient() == admin.Recipient() {
+		return nil
+	}
+
+	return c.ForwardTo(admin)
 }
