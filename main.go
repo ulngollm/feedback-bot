@@ -71,5 +71,10 @@ func onMessage(c tele.Context) error {
 	if err != nil {
 		return fmt.Errorf("forward: %s", err)
 	}
-	return nil
+	return c.Bot().React(
+		c.Chat(),
+		c.Message(),
+		tele.ReactionOptions{
+			Reactions: []tele.Reaction{{Emoji: "👌", Type: "emoji"}}},
+	)
 }
