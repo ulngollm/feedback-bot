@@ -2,7 +2,6 @@ package storage
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"os"
 
@@ -13,19 +12,22 @@ type Storage struct {
 	db *sql.DB
 }
 
-func New() (*Storage, error) {
+func New() *Storage {
 	dbPath, ok := os.LookupEnv("DB_PATH")
 	if !ok {
-		log.Fatal("DB_PATH environment variable is not set")
+		log.Println("DB_PATH environment variable is not set")
+		return nil
 	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("error opening database: %w", err)
+		log.Printf("error opening database: %v", err)
+		return nil
 	}
 
 	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("error connecting to the database: %w", err)
+		log.Printf("error connecting to the database: %v", err)
+		return nil
 	}
 
 	_, err = db.Exec(`
@@ -39,8 +41,9 @@ func New() (*Storage, error) {
 		)
 	`)
 	if err != nil {
-		return nil, fmt.Errorf("error creating messages table: %w", err)
+		log.Printf("error creating messages table: %v", err)
+		return nil
 	}
 
-	return &Storage{db: db}, nil
+	return &Storage{db: db}
 }

@@ -9,9 +9,9 @@ import (
 
 type Message struct {
 	ID                 int64
-	OriginalMessageID  int   `gorm:"not null"`
-	ForwardedMessageID int   `gorm:"not null"`
-	ChatID             int64 `gorm:"not null"`
+	OriginalMessageID  int
+	ForwardedMessageID int
+	ChatID             int64
 	Text               string
 	CreatedAt          time.Time
 }
@@ -28,19 +28,19 @@ func (s *Storage) SaveMessage(msg Message) error {
 	return nil
 }
 
-func (s *Storage) GetMessageByForwardedID(forwardedID int64) (*Message, error) {
+func (s *Storage) GetMessageByForwardedID(forwardedID int) (*Message, error) {
 	query := `
-		SELECT id, original_message_id, forwarded_message_id, chat_id, text, created_at, updated_at
+		SELECT original_message_id, forwarded_message_id, chat_id
 		FROM messages
 		WHERE forwarded_message_id = ?
 	`
-	msg := &Message{}
-	err := s.db.QueryRow(query, forwardedID).Scan(msg)
+	var msg Message
+	err := s.db.QueryRow(query, forwardedID).Scan(&msg.OriginalMessageID, &msg.ForwardedMessageID, &msg.ChatID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("queryRow: %w", err)
 	}
-	return msg, nil
+	return &msg, nil
 }
