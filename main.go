@@ -1,6 +1,7 @@
 package main
 
 import (
+	"feedback-bot/storage"
 	"fmt"
 	"log"
 	"os"
@@ -12,7 +13,7 @@ import (
 )
 
 var admin tele.ChatID
-var storage *Storage
+var st *storage.Storage
 
 func init() {
 	err := godotenv.Load()
@@ -55,7 +56,7 @@ func main() {
 		return
 	}
 	admin = tele.ChatID(adminID)
-	storage = NewStorage()
+	st = storage.New()
 
 	bot.Handle("/start", onStart)
 	bot.Handle(tele.OnText, onMessage)
@@ -88,14 +89,14 @@ func onMessage(c tele.Context) error {
 	if err != nil {
 		return fmt.Errorf("forward: %s", err)
 	}
-	msg := Message{
+	msg := storage.Message{
 		OriginalMessageID:  c.Message().ID,
 		ForwardedMessageID: fwd.ID,
 		ChatID:             c.Chat().ID,
 		Text:               c.Message().Text,
 		CreatedAt:          c.Message().Time(),
 	}
-	if err := storage.SaveMessage(msg); err != nil {
+	if err := st.SaveMessage(msg); err != nil {
 		return fmt.Errorf("storage.SaveMessage: %s", err)
 	}
 	return nil
@@ -115,7 +116,7 @@ func onReply(c tele.Context) error {
 	// todo use ReplyTo (чтобы на той стороне было понятно, на какое сообщение ответили)
 	// todo need originalMessageID . Если все сообщения будут писаться в бд - проблема решена
 	// лог должен быть такой, чтобы по id of forwarded message в админ чате можно было получить id оригинального сообщения
-	fb, err := storage.GetMessageByForwardedID(int64(r.ID))
+	fb, err := st.GetMessageByForwardedID(int64(r.ID))
 	if err != nil {
 		return err
 	}
