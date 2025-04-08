@@ -1,6 +1,7 @@
 package main
 
 import (
+	"feedback-bot/storage"
 	"fmt"
 	"log"
 	"os"
@@ -12,6 +13,8 @@ import (
 )
 
 var admin tele.ChatID
+var st *storage.Storage
+var answerModeEnabled bool
 
 func init() {
 	err := godotenv.Load()
@@ -37,6 +40,7 @@ func main() {
 		log.Fatalf("strconv.ParseInt: %s", err)
 		return
 	}
+	answerModeEnabled = os.Getenv("ENABLE_ANSWER_MODE") != ""
 
 	pref := tele.Settings{
 		Token: t,
@@ -54,10 +58,14 @@ func main() {
 		return
 	}
 	admin = tele.ChatID(adminID)
+	st = storage.New()
+	if st == nil {
+		log.Fatalf("storage.New: %s", fmt.Errorf("storate is not initialized"))
+	}
 
 	bot.Handle("/start", onStart)
 	bot.Handle(tele.OnText, onMessage)
-	bot.Handle(tele.OnReply, onReply)
+	bot.Handle(tele.OnReply, onAdminAnswer, canAnswerOnReply)
 
 	bot.Start()
 
@@ -68,6 +76,7 @@ func onStart(c tele.Context) error {
 }
 
 func onMessage(c tele.Context) error {
+	//todo чтобы работал только в личном чате
 	if err := c.Bot().React(
 		c.Chat(),
 		c.Message(),
@@ -81,25 +90,75 @@ func onMessage(c tele.Context) error {
 		return nil
 	}
 
-	return c.ForwardTo(admin)
+	fwd, err := c.Bot().Forward(admin, c.Message())
+	if err != nil {
+		return fmt.Errorf("forward: %s", err)
+	}
+	msg := storage.Message{
+		OriginalMessageID:  c.Message().ID,
+		ForwardedMessageID: fwd.ID,
+		ChatID:             c.Chat().ID,
+		Text:               c.Message().Text,
+		CreatedAt:          c.Message().Time(),
+	}
+	if err := st.SaveMessage(msg); err != nil {
+		return fmt.Errorf("storage.SaveMessage: %s", err)
+	}
+	return nil
+
 }
 
-func onReply(c tele.Context) error {
+func onAdminAnswer(c tele.Context) error {
 	if c.Message().ReplyTo == nil {
 		return nil
 	}
-	if c.Message().ReplyTo.OriginalChat == c.Chat() {
+	r := c.Message().ReplyTo
+	// skip if message is not forward
+	if r.Origin == nil {
 		return nil
 	}
-	r := c.Message().ReplyTo
-	msg := c.Message().Text
-
-	// todo use ReplyTo (чтобы на той стороне было понятно, на какое сообщение ответили)
-	// todo need originalMessageID . Если все сообщения будут писаться в бд - проблема решена
-	// лог должен быть такой, чтобы по id of forwarded message в админ чате можно было получить id оригинального сообщения
-	_, err := c.Bot().Send(r.OriginalSender, msg)
-	if err != nil {
-		return fmt.Errorf("onReply.Send: %s", err)
+	//if user is hidden - OriginalChat and OriginalSender are empty
+	//проверить, что это не ответ на сообщение из этого же чата
+	if c.Chat().FirstName == r.OriginalSenderName {
+		return nil
 	}
+
+	fb, err := st.GetMessageByForwardedID(r.ID)
+	if err != nil {
+		if err := c.Send("ошибка отправки ответа пользователю"); err != nil {
+			return fmt.Errorf("onAdminAnswer.send: %w", err)
+		}
+		return fmt.Errorf("getMessageByForwardedID: %w", err)
+	}
+	var rc tele.Recipient
+	if r.OriginalSender != nil {
+		rc = r.OriginalSender
+	} else if fb != nil {
+		rc = tele.ChatID(fb.ChatID)
+	} else {
+		return c.Send("получатель скрыт")
+	}
+
+	var opts *tele.SendOptions
+	if fb != nil {
+		omsg := &tele.Message{ID: fb.OriginalMessageID}
+		opts = &tele.SendOptions{ReplyTo: omsg}
+	}
+	answer := c.Message().Text
+
+	_, err = c.Bot().Send(rc, answer, opts)
+	if err != nil {
+		return fmt.Errorf("onAdminAnswer.Send: %s", err)
+	}
+	// todo записывать ответ в историю тоже
 	return c.Send("ответ отправлен пользователю")
+}
+
+func canAnswerOnReply(next tele.HandlerFunc) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		if answerModeEnabled {
+			return next(c)
+		}
+		return nil
+	}
 }
