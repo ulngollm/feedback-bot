@@ -12,6 +12,7 @@ import (
 )
 
 var admin tele.ChatID
+var storage *Storage
 
 func init() {
 	err := godotenv.Load()
@@ -54,6 +55,7 @@ func main() {
 		return
 	}
 	admin = tele.ChatID(adminID)
+	storage = NewStorage()
 
 	bot.Handle("/start", onStart)
 	bot.Handle(tele.OnText, onMessage)
@@ -68,6 +70,7 @@ func onStart(c tele.Context) error {
 }
 
 func onMessage(c tele.Context) error {
+	//todo чтобы работал только в личном чате
 	if err := c.Bot().React(
 		c.Chat(),
 		c.Message(),
@@ -81,7 +84,22 @@ func onMessage(c tele.Context) error {
 		return nil
 	}
 
-	return c.ForwardTo(admin)
+	fwd, err := c.Bot().Forward(admin, c.Message())
+	if err != nil {
+		return fmt.Errorf("forward: %s", err)
+	}
+	msg := Message{
+		OriginalMessageID:  c.Message().ID,
+		ForwardedMessageID: fwd.ID,
+		ChatID:             c.Chat().ID,
+		Text:               c.Message().Text,
+		CreatedAt:          c.Message().Time(),
+	}
+	if err := storage.SaveMessage(msg); err != nil {
+		return fmt.Errorf("storage.SaveMessage: %s", err)
+	}
+	return nil
+
 }
 
 func onReply(c tele.Context) error {
@@ -97,9 +115,16 @@ func onReply(c tele.Context) error {
 	// todo use ReplyTo (чтобы на той стороне было понятно, на какое сообщение ответили)
 	// todo need originalMessageID . Если все сообщения будут писаться в бд - проблема решена
 	// лог должен быть такой, чтобы по id of forwarded message в админ чате можно было получить id оригинального сообщения
-	_, err := c.Bot().Send(r.OriginalSender, msg)
+	fb, err := storage.GetMessageByForwardedID(int64(r.ID))
+	if err != nil {
+		return err
+	}
+
+	ormsg := &tele.Message{ID: fb.OriginalMessageID}
+	_, err = c.Bot().Reply(ormsg, msg)
 	if err != nil {
 		return fmt.Errorf("onReply.Send: %s", err)
 	}
+	//todo логировать ответ тоже
 	return c.Send("ответ отправлен пользователю")
 }
